@@ -16,7 +16,7 @@ import fr.pederobien.voxy.server.interfaces.IVoxyRoom;
 import fr.pederobien.voxy.server.interfaces.IVoxyServer;
 
 public class VoxyCommandTree {
-	private static final String NEW = "new";
+	private static final String CREATE = "create";
 	private static final String OPEN = "open";
 	private static final String CLOSE = "close";
 	private static final String DISPOSE = "dispose";
@@ -29,7 +29,7 @@ public class VoxyCommandTree {
 	private static final String ROOM = "room";
 	private static final String PLAYER = "player";
 	private static final String MUTE = "mute";
-	private ITree<IVoxyServer> tree;
+	private final ITree<IVoxyServer> tree;
 
 	/**
 	 * Creates a command tree to interact with a voxy server
@@ -39,8 +39,8 @@ public class VoxyCommandTree {
 
 		INodeBuilder<IVoxyServer> builder;
 
-		// New ----------------------------------------------------------------
-		builder = tree.getNodeBuilder(NEW, "To create a new server");
+		// Create -------------------------------------------------------------
+		builder = tree.getNodeBuilder(CREATE, "To create a new server");
 		builder.withAvailability(server -> server == null || server.isDisposed());
 		builder.withExecution((tree, args) -> create(tree, args));
 		tree.add(builder.build());
@@ -135,7 +135,7 @@ public class VoxyCommandTree {
 		builder.withExecution((tree, args) -> setMute(tree, args));
 		player.add(builder.build());
 
-		// Rooms List ---------------------------------------------------------
+		// List ---------------------------------------------------------------
 		builder = tree.getNodeBuilder(LIST, "To list each room registered on the server");
 		builder.withAvailability(server -> server != null);
 		builder.withExecution((tree, args) -> list(tree, args));

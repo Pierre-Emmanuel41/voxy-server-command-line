@@ -29,6 +29,10 @@ public class VoxyCommandTree {
 	private static final String ROOM = "room";
 	private static final String PLAYER = "player";
 	private static final String MUTE = "mute";
+	private static final String COORDINATES = "coordinates";
+	private static final String SPHERE = "sphere";
+	private static final String RADIUS = "radius";
+	private static final String ENABLE = "enable";
 	private final ITree<IVoxyServer> tree;
 
 	/**
@@ -101,13 +105,13 @@ public class VoxyCommandTree {
 
 		// Set ----------------------------------------------------------------
 		builder = tree.getNodeBuilder(SET, "To modify the properties of a room or of a player");
-		builder.withAvailability(server -> server != null && server.getRooms().size() > 0);
+		builder.withAvailability(server -> server != null);
 		INode<IVoxyServer> set = builder.build();
 		tree.add(set);
 
 		// Set Room -----------------------------------------------------------
 		builder = tree.getNodeBuilder(ROOM, "To modify the properties of a room");
-		builder.withAvailability(server -> server != null);
+		builder.withAvailability(server -> server != null && server.getRooms().size() > 0);
 		INode<IVoxyServer> room = builder.build();
 		set.add(room);
 
@@ -125,7 +129,7 @@ public class VoxyCommandTree {
 
 		// Set Player ---------------------------------------------------------
 		builder = tree.getNodeBuilder(PLAYER, "To modify player's properties");
-		builder.withAvailability(server -> server != null);
+		builder.withAvailability(server -> server != null && !server.getPlayers().isEmpty());
 		INode<IVoxyServer> player = builder.build();
 		set.add(player);
 
@@ -134,6 +138,30 @@ public class VoxyCommandTree {
 		builder.withAvailability(server -> server != null);
 		builder.withExecution((tree, args) -> setMute(tree, args));
 		player.add(builder.build());
+
+		// Set Player Coordinates ---------------------------------------------
+		builder = tree.getNodeBuilder(COORDINATES, "To set the coordinates of a player");
+		builder.withAvailability(server -> server != null);
+		builder.withExecution((tree, args) -> setCoordinates(tree, args));
+		player.add(builder.build());
+
+		// Set Player Sphere --------------------------------------------------
+		builder = tree.getNodeBuilder(SPHERE, "To modify player's sound sphere properties");
+		builder.withAvailability(server -> server != null);
+		INode<IVoxyServer> sphere = builder.build();
+		player.add(sphere);
+
+		// Set Player Sphere radius -------------------------------------------
+		builder = tree.getNodeBuilder(RADIUS, "To set the radius of a player's sound sphere");
+		builder.withAvailability(server -> server != null);
+		builder.withExecution((tree, args) -> setSphereRadius(tree, args));
+		sphere.add(builder.build());
+
+		// Set Player Sphere enable -------------------------------------------
+		builder = tree.getNodeBuilder(ENABLE, "To enable or disable player's sound sphere");
+		builder.withAvailability(server -> server != null);
+		builder.withExecution((tree, args) -> setSphereEnable(tree, args));
+		sphere.add(builder.build());
 
 		// List ---------------------------------------------------------------
 		builder = tree.getNodeBuilder(LIST, "To list each room registered on the server");
@@ -351,5 +379,90 @@ public class VoxyCommandTree {
 			return NodeHelper.result(false, "An external plugin cancelled the change of the mute status of player \"%s\"", player.get().getName());
 
 		return NodeHelper.result(true, "The player \"%s\" is %s", player.get().getName(), isMute ? "muted" : "unmuted");
+	}
+
+	private IResult setCoordinates(ITree<IVoxyServer> tree, String[] args) {
+		if (args.length < 7)
+			return NodeHelper.result(false, "The player's name or one coordinates (x, y, z, yaw, pitch, roll) is missing");
+
+		Optional<IVoxyPlayer> player = tree.getSeed().getPlayerByName(args[0]);
+		if (!player.isPresent())
+			return NodeHelper.result(false, "The player \"%s\" is not registered on server \"%s\"", args[0], tree.getSeed().getName());
+
+		if (!NodeHelper.isStrictDouble(args[1]))
+			return NodeHelper.result(false, "The x value cannot be parsed, it shall be a decimal value with \".\" as separator");
+
+		double x = NodeHelper.parseDouble(args[1]);
+
+		if (!NodeHelper.isStrictDouble(args[2]))
+			return NodeHelper.result(false, "The y value cannot be parsed, it shall be a decimal value with \".\" as separator");
+
+		double y = NodeHelper.parseDouble(args[2]);
+
+		if (!NodeHelper.isStrictDouble(args[3]))
+			return NodeHelper.result(false, "The z value cannot be parsed, it shall be a decimal value with \".\" as separator");
+
+		double z = NodeHelper.parseDouble(args[3]);
+
+		if (!NodeHelper.isStrictDouble(args[4]))
+			return NodeHelper.result(false, "The yaw value cannot be parsed, it shall be a decimal value with \".\" as separator");
+
+		double yaw = NodeHelper.parseDouble(args[4]);
+
+		if (!NodeHelper.isStrictDouble(args[5]))
+			return NodeHelper.result(false, "The pitch value cannot be parsed, it shall be a decimal value with \".\" as separator");
+
+		double pitch = NodeHelper.parseDouble(args[5]);
+
+		if (!NodeHelper.isStrictDouble(args[6]))
+			return NodeHelper.result(false, "The roll value cannot be parsed, it shall be a decimal value with \".\" as separator");
+
+		double roll = NodeHelper.parseDouble(args[6]);
+
+		player.get().getCoordinates().update(x, y, z, yaw, pitch, roll);
+		return NodeHelper.result(true, "%s's coordinates updated: [%s, %s, %s, %s, %s, %s]", player.get().getName(), x, y, z, yaw, pitch, roll);
+	}
+
+	private IResult setSphereRadius(ITree<IVoxyServer> tree, String[] args) {
+		if (args.length < 4)
+			return NodeHelper.result(false, "The player's name or one radius (x-radius, y-radius, z-radius) is missing");
+
+		Optional<IVoxyPlayer> player = tree.getSeed().getPlayerByName(args[0]);
+		if (!player.isPresent())
+			return NodeHelper.result(false, "The player \"%s\" is not registered on server \"%s\"", args[0], tree.getSeed().getName());
+
+		if (!NodeHelper.isStrictDouble(args[1]))
+			return NodeHelper.result(false, "The x-radius value cannot be parsed, it shall be a decimal value with \".\" as separator");
+
+		double xRadius = NodeHelper.parseDouble(args[1]);
+
+		if (!NodeHelper.isStrictDouble(args[2]))
+			return NodeHelper.result(false, "The y-radius value cannot be parsed, it shall be a decimal value with \".\" as separator");
+
+		double yRadius = NodeHelper.parseDouble(args[2]);
+
+		if (!NodeHelper.isStrictDouble(args[3]))
+			return NodeHelper.result(false, "The z-radius value cannot be parsed, it shall be a decimal value with \".\" as separator");
+
+		double zRadius = NodeHelper.parseDouble(args[3]);
+
+		player.get().getSoundSphere().setRadius(xRadius, yRadius, zRadius);
+		return NodeHelper.result(true, "%s's sphere radius updated: [%s, %s, %s]", player.get().getName(), xRadius, yRadius, zRadius);
+	}
+
+	private IResult setSphereEnable(ITree<IVoxyServer> tree, String[] args) {
+		if (args.length < 2)
+			return NodeHelper.result(false, "The player's name or the enable state is missing");
+
+		Optional<IVoxyPlayer> player = tree.getSeed().getPlayerByName(args[0]);
+		if (!player.isPresent())
+			return NodeHelper.result(false, "The player \"%s\" is not registered on server \"%s\"", args[0], tree.getSeed().getName());
+
+		if (!NodeHelper.isStrictBool(args[1]))
+			return NodeHelper.result(false, "The enable status cannot be parsed, it shall be \"true\" or \"false\", case ignored");
+
+		boolean isEnabled = NodeHelper.parseBool(args[1]);
+		player.get().getSoundSphere().setEnabled(isEnabled);
+		return NodeHelper.result(true, "The sound sphere of player \"%s\" is %s", player.get().getName(), isEnabled ? "enabled" : "disabled");
 	}
 }

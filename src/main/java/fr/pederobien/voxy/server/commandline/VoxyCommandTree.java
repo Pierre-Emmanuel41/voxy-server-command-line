@@ -10,7 +10,10 @@ import fr.pederobien.commandtree.interfaces.INode;
 import fr.pederobien.commandtree.interfaces.INodeBuilder;
 import fr.pederobien.commandtree.interfaces.IResult;
 import fr.pederobien.commandtree.interfaces.ITree;
+import fr.pederobien.communication.impl.layer.AesSafeLayerInitializer;
+import fr.pederobien.communication.impl.layer.SimpleCertificate;
 import fr.pederobien.voxy.server.impl.VoxyServerFactory;
+import fr.pederobien.voxy.server.impl.config.VoxyServerConfig;
 import fr.pederobien.voxy.server.interfaces.IVoxyPlayer;
 import fr.pederobien.voxy.server.interfaces.IVoxyRoom;
 import fr.pederobien.voxy.server.interfaces.IVoxyServer;
@@ -193,7 +196,13 @@ public class VoxyCommandTree {
 
 		int port = NodeHelper.parseInt(args[1]);
 
-		tree.setSeed(VoxyServerFactory.create(name, port));
+		VoxyServerConfig config = VoxyServerFactory.createConfig(name, "*", port);
+		config.getTcpConfig().setLayerInitializer(() -> new AesSafeLayerInitializer(new SimpleCertificate()));
+		config.getUdpConfig().setLayerInitializer(() -> new AesSafeLayerInitializer(new SimpleCertificate()));
+		config.getUdpConfig().setMin(40000);
+		config.getUdpConfig().setMax(50000);
+
+		tree.setSeed(VoxyServerFactory.createServer(config));
 		return NodeHelper.result(true, "Server \"%s\" created successfully", tree.getSeed().getName());
 	}
 

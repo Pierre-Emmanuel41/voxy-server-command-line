@@ -73,6 +73,18 @@
 	@call cd ..
 )
 
+@if not exist command-tree (
+	@echo Cloning git repo for project command-tree
+    @call git clone --branch 2.1-SNAPSHOT --single-branch https://github.com/Pierre-Emmanuel41/command-tree.git
+) else (
+	@call cd command-tree
+
+	@echo Pulling latest changes for project command-tree
+	@call git pull
+
+	@call cd ..
+)
+
 @rem Building dependencies
 @echo Building project utils
 @call cd utils
@@ -101,6 +113,11 @@
 
 @echo Building project voxy-server
 @call cd voxy-server
+@call mvn clean package install
+@call cd ..
+
+@echo Building project command-tree
+@call cd command-tree
 @call mvn clean package install
 @call cd ..
 

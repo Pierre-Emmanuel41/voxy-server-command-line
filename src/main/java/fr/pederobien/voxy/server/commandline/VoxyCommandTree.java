@@ -243,7 +243,15 @@ public class VoxyCommandTree {
 		if (!optional.isEmpty())
 			return NodeHelper.result(false, "The room \"%s\" is already registered on server \"%s\"", name, tree.getSeed().getName());
 
-		if (!tree.getSeed().getRooms().add(name))
+		int port = 0;
+		if (1 < args.length) {
+			if (NodeHelper.isStrictInt(args[1]))
+				return NodeHelper.result(false, "The room's port number cannot be parsed, it shall be an integer");
+
+			port = NodeHelper.parseInt(args[1]);
+		}
+
+		if (!tree.getSeed().getRooms().add(name, port, tree.getSeed()))
 			return NodeHelper.result(false, "An external plugin cancelled the adding of room %s from server \"%s\"", name, tree.getSeed().getName());
 
 		return NodeHelper.result(true, "The room \"%s\" has been added to server \"%s\"", name, tree.getSeed().getName());
@@ -259,7 +267,7 @@ public class VoxyCommandTree {
 		if (optional.isEmpty())
 			return NodeHelper.result(false, "The room \"%s\" is not registered on server %s", name, tree.getSeed().getName());
 
-		if (!tree.getSeed().getRooms().remove(optional.get().getName()))
+		if (!tree.getSeed().getRooms().remove(optional.get().getName(), tree.getSeed()))
 			return NodeHelper.result(false, "An external plugin cancelled the removing of room %s from server \"%\"", name, tree.getSeed().getName());
 
 		return NodeHelper.result(true, "The room \"%s\" has been removed from server \"%s\"", name, tree.getSeed().getName());
@@ -281,7 +289,7 @@ public class VoxyCommandTree {
 		if (!exist.isEmpty())
 			return NodeHelper.result(false, "The room \"%s\" is already registered on server \"%s\"", newName, tree.getSeed().getName());
 
-		if (!toRename.get().setName(newName))
+		if (!toRename.get().setName(newName, tree.getSeed()))
 			return NodeHelper.result(false, "An external plugin cancelled the renaming of room \"%s\" as \"%s\" on server \"%s\"", oldName, newName,
 					tree.getSeed().getName());
 
@@ -341,7 +349,7 @@ public class VoxyCommandTree {
 		if (registered.isPresent())
 			return NodeHelper.result(false, "The player \"%s\" is already registered in room %s", player.get().getName(), room.get().getName());
 
-		if (!room.get().getPlayers().add(player.get().getName()))
+		if (!room.get().getPlayers().add(player.get().getName(), tree.getSeed()))
 			return NodeHelper.result(false, "An external plugin cancelled the adding of player \"%s\" to room \"%s\"", player.get().getName(), room.get().getName());
 
 		return NodeHelper.result(true, "The player \"%s\" has been added to room \"%s\"", player.get().getName(), room.get().getName());
@@ -384,7 +392,7 @@ public class VoxyCommandTree {
 		if (player.get().isMute() == isMute)
 			return NodeHelper.result(true, "The player \"%s\" is already %s", player.get().getName(), isMute ? "muted" : "unmuted");
 
-		if (player.get().setMute(isMute))
+		if (player.get().setMute(isMute, tree.getSeed()))
 			return NodeHelper.result(false, "An external plugin cancelled the change of the mute status of player \"%s\"", player.get().getName());
 
 		return NodeHelper.result(true, "The player \"%s\" is %s", player.get().getName(), isMute ? "muted" : "unmuted");

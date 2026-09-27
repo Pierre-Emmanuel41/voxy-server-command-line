@@ -15,11 +15,18 @@ import fr.pederobien.communication.impl.layer.AesSafeLayerInitializer;
 import fr.pederobien.communication.impl.layer.SimpleCertificate;
 import fr.pederobien.voxy.server.impl.VoxyServerFactory;
 import fr.pederobien.voxy.server.impl.config.VoxyServerConfig;
+import fr.pederobien.voxy.server.interfaces.IVoxyEffect;
+import fr.pederobien.voxy.server.interfaces.IVoxyEffect.ParameterDescription;
 import fr.pederobien.voxy.server.interfaces.IVoxyPlayer;
 import fr.pederobien.voxy.server.interfaces.IVoxyRoom;
 import fr.pederobien.voxy.server.interfaces.IVoxyServer;
 
 public class VoxyCommandTree {
+	/**
+	 * Specific flag to perform an action on all objects (players, rooms etc...)
+	 */
+	private static final String ALL = "all";
+
 	private static final String LOAD = "load";
 	private static final String DEFAULT = "default";
 	private static final String CREATE = "create";
@@ -39,6 +46,7 @@ public class VoxyCommandTree {
 	private static final String SPHERE = "sphere";
 	private static final String RADIUS = "radius";
 	private static final String ENABLE = "enable";
+	private static final String EFFECT = "effect";
 	private final ITree<IVoxyServer> tree;
 
 	/**
@@ -51,38 +59,38 @@ public class VoxyCommandTree {
 
 		// Load ---------------------------------------------------------------
 		builder = tree.getNodeBuilder(LOAD, "To load a voxy server configuration");
-		builder.withAvailability(server -> server == null || server.isDisposed());
+		builder.withAvailability(server -> server == null);
 		INode<IVoxyServer> load = builder.build();
 		tree.add(load);
 
 		// Load Default -------------------------------------------------------
 		builder = tree.getNodeBuilder(DEFAULT, "To load the default configuration of a voxy server");
-		builder.withAvailability(server -> server == null || server.isDisposed());
+		builder.withAvailability(server -> server == null);
 		builder.withExecution((tree, args) -> loadDefault(tree, args));
 		load.add(builder.build());
 
 		// Create -------------------------------------------------------------
 		builder = tree.getNodeBuilder(CREATE, "To create a new server");
-		builder.withAvailability(server -> server == null || server.isDisposed());
+		builder.withAvailability(server -> server == null);
 		builder.withExecution((tree, args) -> create(tree, args));
 		builder.withCompletions((tree, args) -> createCompletions(tree, args));
 		tree.add(builder.build());
 
 		// Open ---------------------------------------------------------------
 		builder = tree.getNodeBuilder(OPEN, "To open a server");
-		builder.withAvailability(server -> server != null && !server.isDisposed());
+		builder.withAvailability(server -> server != null);
 		builder.withExecution((tree, args) -> open(tree, args));
 		tree.add(builder.build());
 
 		// Close --------------------------------------------------------------
 		builder = tree.getNodeBuilder(CLOSE, "To close a server");
-		builder.withAvailability(server -> server != null && !server.isDisposed());
+		builder.withAvailability(server -> server != null);
 		builder.withExecution((tree, args) -> close(tree, args));
 		tree.add(builder.build());
 
 		// Dispose ------------------------------------------------------------
 		builder = tree.getNodeBuilder(DISPOSE, "To dispose a server");
-		builder.withAvailability(server -> server != null && !server.isDisposed());
+		builder.withAvailability(server -> server != null);
 		builder.withExecution((tree, args) -> dispose(tree, args));
 		tree.add(builder.build());
 
@@ -104,6 +112,13 @@ public class VoxyCommandTree {
 		builder.withAvailability(server -> server != null && server.getRooms().size() > 0 && server.getPlayers().size() > 0);
 		builder.withExecution((tree, args) -> addPlayer(tree, args));
 		builder.withCompletions((tree, args) -> addPlayerCompletions(tree, args));
+		add.add(builder.build());
+
+		// Add Effect ---------------------------------------------------------
+		builder = tree.getNodeBuilder(EFFECT, "To add an effect to apply on the audio stream of a player");
+		builder.withAvailability(server -> server != null);
+		builder.withExecution((tree, args) -> addPlayerEffect(tree, args));
+		builder.withCompletions((tree, args) -> addPlayerEffectCompletions(tree, args));
 		add.add(builder.build());
 
 		// Remove -------------------------------------------------------------
@@ -285,10 +300,13 @@ public class VoxyCommandTree {
 
 	// Dispose ----------------------------------------------------------------
 	private IResult dispose(ITree<IVoxyServer> tree, String[] args) {
-		if (tree.getSeed().dispose())
-			return NodeHelper.result(true, "Server \"%s\" disposed successfully", tree.getSeed().getName());
-		else
-			return NodeHelper.result(false, "Server \"%s\" could not be disposed, try to close the server first", tree.getSeed().getName());
+		String name = tree.getSeed().getName();
+
+		if (tree.getSeed().dispose()) {
+			tree.setSeed(null);
+			return NodeHelper.result(true, "Server \"%s\" disposed successfully", name);
+		} else
+			return NodeHelper.result(false, "Server \"%s\" could not be disposed, try to close the server first", name);
 	}
 
 	// Add Room ---------------------------------------------------------------
@@ -372,6 +390,128 @@ public class VoxyCommandTree {
 		}
 
 		return NodeHelper.asList();
+	}
+
+	// Add Player Effect ------------------------------------------------------
+	private IResult addPlayerEffect(ITree<IVoxyServer> tree, String[] args) {
+		if (args.length < 3)
+			return NodeHelper.result(false, "The name of the speaking player, of the listening player or of the effect is missing");
+
+		Optional<IVoxyPlayer> speaking = tree.getSeed().getPlayerByName(args[0]);
+		if (speaking.isEmpty())
+			return NodeHelper.result(false, "The player \"%s\" is not registered on the \"%\" server", args[0], tree.getSeed().getName());
+
+		if (speaking.get().getRoom() == null)
+			return NodeHelper.result(false, "The player \"%s\" is not registered in a room", args[0]);
+
+		Optional<IVoxyPlayer> listening = tree.getSeed().getPlayerByName(args[1]);
+		if (listening.isEmpty())
+			return NodeHelper.result(false, "The player \"%s\" is not registered on the \"%\" server", args[1], tree.getSeed().getName());
+
+		if (listening.get().getRoom() == null)
+			return NodeHelper.result(false, "The player \"%s\" is not registered in a room", args[0]);
+
+		if (!speaking.get().getRoom().getName().equals(listening.get().getRoom().getName()))
+			return NodeHelper.result(false, "\"%s\" and \"%s\" are not in the same room", args[0], args[1]);
+
+		IVoxyEffect effect = tree.getSeed().getEffectManager().get(args[2]);
+		if (effect == null)
+			return NodeHelper.result(false, "There is no effect registered for the name \"%s\"", args[2]);
+
+		// Extracting parameter name and value
+		List<String> names = effect.getNames();
+		int offset = 3;
+		String[] paramAndVal = NodeHelper.extract(args, offset);
+
+		// Checking that all parameters are set
+		if (paramAndVal.length != names.size() * 2)
+			return NodeHelper.result(false, "A value is expected for each parameter: %s", names.toString());
+
+		for (int i = 0; i < paramAndVal.length; i += 2) {
+			if (!effect.update(paramAndVal[i], paramAndVal[i + 1]))
+				return NodeHelper.result(false, "Cannot update the value of parameter \"%s\" (found %s)", paramAndVal[i], paramAndVal[i + 1]);
+		}
+
+		listening.get().addEffect(speaking.get(), 0, effect);
+		return NodeHelper.result(false, "To be implemented");
+	}
+
+	private List<String> addPlayerEffectCompletions(ITree<IVoxyServer> tree, String[] args) {
+		if (args.length == 0)
+			return NodeHelper.emptyList();
+
+		// Speaking player
+		if (args.length == 1) {
+			// The name of each players registered in a room
+			Stream<String> stream = tree.getSeed().getPlayers().stream().filter(player -> player.getRoom() != null).map(player -> player.getName());
+			return NodeHelper.filter(stream, args);
+		}
+
+		// Listening player
+		if (args.length == 2) {
+			// The name of each players registered in a room
+			Stream<String> stream = tree.getSeed().getPlayers().stream().filter(player -> player.getRoom() != null).map(player -> player.getName());
+			return NodeHelper.filter(stream, args);
+		}
+
+		// Effect name
+		if (args.length == 3) {
+			// The name of each supported effect
+			Stream<String> stream = tree.getSeed().getEffectManager().getEffects().stream().map(effect -> effect.getName());
+			return NodeHelper.filter(stream, args);
+		}
+
+		// Defines the value of each parameter of the effect if the effect is registered
+		IVoxyEffect effect = tree.getSeed().getEffectManager().get(args[2]);
+		if (effect == null)
+			return NodeHelper.emptyList();
+
+		List<String> names = effect.getNames();
+		int offset = 3;
+		String[] paramAndVal = NodeHelper.extract(args, offset);
+
+		// Expecting parameter name
+		if (paramAndVal.length % 2 == 1) {
+
+			// Removing parameters already registered
+			for (int i = 0; i < paramAndVal.length - 1; i += 2) {
+
+				// If parameter cannot be removed, then wrong parameter name
+				if (!names.remove(paramAndVal[i]))
+					return NodeHelper.emptyList();
+				else if (!effect.update(paramAndVal[i], paramAndVal[i + 1]))
+					return NodeHelper.emptyList();
+			}
+
+			return NodeHelper.filter(names.stream(), args);
+		}
+
+		// Expecting parameter value
+		else {
+			String parameter = paramAndVal[0];
+			for (int i = 0; i < paramAndVal.length - 1; i += 2) {
+				// Getting parameter name, parsing parameter value
+				parameter = paramAndVal[i];
+
+				// Parameter value defined but update failed
+				if (!paramAndVal[i + 1].isEmpty() && !effect.update(parameter, paramAndVal[i + 1]))
+					return NodeHelper.emptyList();
+			}
+
+			ParameterDescription description = effect.getDescription(parameter);
+			if (description == null)
+				return NodeHelper.emptyList();
+
+			String name = description.getName();
+			String datatype = description.getValueDataType().getSimpleName();
+			String completion;
+			if (description.getUnit() != null)
+				completion = String.format("<%s:%s[%s] - %s>", name, datatype, description.getUnit(), description.getConstraints());
+			else
+				completion = String.format("<%s:%s - %s>", name, datatype, description.getConstraints());
+
+			return NodeHelper.asList(completion);
+		}
 	}
 
 	// Remove Room ------------------------------------------------------------
@@ -472,7 +612,7 @@ public class VoxyCommandTree {
 		return NodeHelper.emptyList();
 	}
 
-	// Set Player Muter -------------------------------------------------------
+	// Set Player Mute --------------------------------------------------------
 	private IResult setMute(ITree<IVoxyServer> tree, String[] args) {
 		if (args.length < 2)
 			return NodeHelper.result(false, "The player's name or the mute status is missing");
@@ -633,10 +773,16 @@ public class VoxyCommandTree {
 		if (args.length < 4)
 			return NodeHelper.result(false, "The player's name or one radius (x-radius, y-radius, z-radius) is missing");
 
-		Optional<IVoxyPlayer> player = tree.getSeed().getPlayerByName(args[0]);
-		if (!player.isPresent())
-			return NodeHelper.result(false, "The player \"%s\" is not registered on server \"%s\"", args[0], tree.getSeed().getName());
+		List<IVoxyPlayer> players = NodeHelper.emptyList();
+		if (args[0].equalsIgnoreCase(ALL))
+			players.addAll(tree.getSeed().getPlayers());
+		else {
+			Optional<IVoxyPlayer> player = tree.getSeed().getPlayerByName(args[0]);
+			if (!player.isPresent())
+				return NodeHelper.result(false, "The player \"%s\" is not registered on server \"%s\"", args[0], tree.getSeed().getName());
 
+			players.add(player.get());
+		}
 		if (!NodeHelper.isStrictDouble(args[1]))
 			return NodeHelper.result(false, "The x-radius value cannot be parsed, it shall be a decimal value with \".\" as separator");
 
@@ -652,21 +798,27 @@ public class VoxyCommandTree {
 
 		double zRadius = NodeHelper.parseDouble(args[3]);
 
-		player.get().getSoundSphere().setRadius(xRadius, yRadius, zRadius);
-		return NodeHelper.result(true, "%s's sphere radius updated: [%s, %s, %s]", player.get().getName(), xRadius, yRadius, zRadius);
+		StringJoiner joiner = new StringJoiner(",");
+		for (IVoxyPlayer player : players) {
+			joiner.add(player.getName());
+			player.getSoundSphere().setRadius(xRadius, yRadius, zRadius);
+		}
+		return NodeHelper.result(true, "Sphere radius of %s updated: [%s, %s, %s]", joiner, xRadius, yRadius, zRadius);
 	}
 
 	private List<String> setSphereRadiusCompletions(ITree<IVoxyServer> tree, String[] args) {
 		if (args.length == 1) {
-			// The name of each players registered on the server
-			Stream<String> stream = tree.getSeed().getPlayers().stream().map(player -> player.getName());
+			// The name of each players registered on the server + "all"
+			Stream<String> stream = NodeHelper.concat(tree.getSeed().getPlayers().stream().map(player -> player.getName()), Stream.of(ALL));
 			return NodeHelper.filter(stream, args);
 		}
 
 		if (args.length == 2) {
-			Optional<IVoxyPlayer> player = tree.getSeed().getPlayerByName(args[0]);
-			if (player.isEmpty())
-				return NodeHelper.asList(String.format("The player \"%s\" is not registered on the server", args[0]));
+			if (!args[0].equalsIgnoreCase(ALL)) {
+				Optional<IVoxyPlayer> player = tree.getSeed().getPlayerByName(args[0]);
+				if (player.isEmpty())
+					return NodeHelper.asList(String.format("The player \"%s\" is not registered on the server", args[0]));
+			}
 
 			return NodeHelper.asList("<xRadius:Double>");
 		}
@@ -685,31 +837,47 @@ public class VoxyCommandTree {
 		if (args.length < 2)
 			return NodeHelper.result(false, "The player's name or the enable state is missing");
 
-		Optional<IVoxyPlayer> player = tree.getSeed().getPlayerByName(args[0]);
-		if (!player.isPresent())
-			return NodeHelper.result(false, "The player \"%s\" is not registered on server \"%s\"", args[0], tree.getSeed().getName());
+		List<IVoxyPlayer> players = NodeHelper.emptyList();
+		if (args[0].equals(ALL))
+			players.addAll(tree.getSeed().getPlayers());
+		else {
+			Optional<IVoxyPlayer> player = tree.getSeed().getPlayerByName(args[0]);
+			if (!player.isPresent())
+				return NodeHelper.result(false, "The player \"%s\" is not registered on server \"%s\"", args[0], tree.getSeed().getName());
+
+			players.add(player.get());
+		}
 
 		if (!NodeHelper.isStrictBool(args[1]))
 			return NodeHelper.result(false, "The enable status cannot be parsed, it shall be \"true\" or \"false\", case ignored");
 
 		boolean isEnabled = NodeHelper.parseBool(args[1]);
-		player.get().getSoundSphere().setEnabled(isEnabled);
-		return NodeHelper.result(true, "The sound sphere of player \"%s\" is %s", player.get().getName(), isEnabled ? "enabled" : "disabled");
+
+		StringJoiner joiner = new StringJoiner(",");
+		for (IVoxyPlayer player : players) {
+			joiner.add(player.getName());
+			player.getSoundSphere().setEnabled(isEnabled);
+		}
+
+		return NodeHelper.result(true, "The sound sphere of player(s) \"%s\" is %s", joiner, isEnabled ? "enabled" : "disabled");
 	}
 
 	private List<String> setSphereEnableCompletions(ITree<IVoxyServer> tree, String[] args) {
 		if (args.length == 1) {
 			// The name of each players registered on the server
-			Stream<String> stream = tree.getSeed().getPlayers().stream().map(player -> player.getName());
+			Stream<String> stream = NodeHelper.concat(tree.getSeed().getPlayers().stream().map(player -> player.getName()), Stream.of(ALL));
 			return NodeHelper.filter(stream, args);
 		}
 
 		if (args.length == 2) {
-			Optional<IVoxyPlayer> player = tree.getSeed().getPlayerByName(args[0]);
-			if (player.isEmpty())
-				return NodeHelper.asList(String.format("The player\"%s\" is not registered on the server", args[0]));
+			if (!args[0].equalsIgnoreCase(ALL)) {
+				Optional<IVoxyPlayer> player = tree.getSeed().getPlayerByName(args[0]);
+				if (player.isEmpty())
+					return NodeHelper.asList(String.format("The player\"%s\" is not registered on the server", args[0]));
 
-			return NodeHelper.asList(player.get().getSoundSphere().isEnabled() ? "False" : "True");
+				return NodeHelper.asList(player.get().getSoundSphere().isEnabled() ? "False" : "True");
+			} else
+				return NodeHelper.asList("True", "False");
 		}
 
 		return NodeHelper.emptyList();

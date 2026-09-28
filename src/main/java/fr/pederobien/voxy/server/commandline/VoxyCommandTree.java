@@ -117,8 +117,8 @@ public class VoxyCommandTree {
 		// Add Effect ---------------------------------------------------------
 		builder = tree.getNodeBuilder(EFFECT, "To add an effect to apply on the audio stream of a player");
 		builder.withAvailability(server -> server != null);
-		builder.withExecution((tree, args) -> addPlayerEffect(tree, args));
-		builder.withCompletions((tree, args) -> addPlayerEffectCompletions(tree, args));
+		builder.withExecution((tree, args) -> addEffect(tree, args));
+		builder.withCompletions((tree, args) -> addEffectCompletions(tree, args));
 		add.add(builder.build());
 
 		// Remove -------------------------------------------------------------
@@ -392,8 +392,8 @@ public class VoxyCommandTree {
 		return NodeHelper.asList();
 	}
 
-	// Add Player Effect ------------------------------------------------------
-	private IResult addPlayerEffect(ITree<IVoxyServer> tree, String[] args) {
+	// Add Effect -------------------------------------------------------------
+	private IResult addEffect(ITree<IVoxyServer> tree, String[] args) {
 		if (args.length < 3)
 			return NodeHelper.result(false, "The name of the speaking player, of the listening player or of the effect is missing");
 
@@ -433,10 +433,13 @@ public class VoxyCommandTree {
 		}
 
 		listening.get().addEffect(speaking.get(), 0, effect);
-		return NodeHelper.result(false, "To be implemented");
+
+		String listener = listening.get().getName();
+		String speaker = speaking.get().getName();
+		return NodeHelper.result(true, "Player \"%s\" will hear player \"%s\" with the following effect: %s", listener, speaker, effect);
 	}
 
-	private List<String> addPlayerEffectCompletions(ITree<IVoxyServer> tree, String[] args) {
+	private List<String> addEffectCompletions(ITree<IVoxyServer> tree, String[] args) {
 		if (args.length == 0)
 			return NodeHelper.emptyList();
 

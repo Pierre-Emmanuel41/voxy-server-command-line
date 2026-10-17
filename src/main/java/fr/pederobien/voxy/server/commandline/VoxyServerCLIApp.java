@@ -14,19 +14,14 @@ public class VoxyServerCLIApp {
 	}
 
 	private static void parseArgs(String[] args) {
-		if (args.length == 0) {
-			Logger.setPrintDebugLevel(Integer.MAX_VALUE);
-			return;
-		}
+		int debugLevel = Integer.MAX_VALUE;
 
 		for (int i = 0; i < args.length; /* Managed inside the loop */) {
 			// Debug
 			if (args[i].equals("-d")) {
 				i++;
 				try {
-					int level = Integer.parseInt(args[i]);
-					Logger.setPrintDebugLevel(level);
-					Logger.info("Minimum debug level is %s", level);
+					debugLevel = Integer.parseInt(args[i]);
 					i++;
 				} catch (Exception e) {
 					Logger.warning("Minimum debug level could not be parsed, setting to maximum value (ie: no debug output)");
@@ -43,5 +38,10 @@ public class VoxyServerCLIApp {
 				i++;
 			}
 		}
+
+		Logger.setPrintDebugLevel(debugLevel);
+
+		if (debugLevel != Integer.MAX_VALUE)
+			Logger.info("Minimum debug level is %s", debugLevel);
 	}
 }

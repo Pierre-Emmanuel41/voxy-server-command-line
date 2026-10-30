@@ -47,7 +47,7 @@ public class VoxyCommandTree {
 	private static final String RADIUS = "radius";
 	private static final String ENABLE = "enable";
 	private static final String EFFECT = "effect";
-	private static final String ADD_OR_UPDATE = "--add-or-update";
+	private static final String ADD_OR_UPDATE = "add-or-update";
 	private final ITree<IVoxyServer> tree;
 
 	/**
@@ -117,7 +117,7 @@ public class VoxyCommandTree {
 
 		// Effect -------------------------------------------------------------
 		builder = tree.getNodeBuilder(EFFECT, "To manage effects to apply on the audio stream of a player");
-		builder.withAvailability(server -> server != null);
+		builder.withAvailability(server -> server != null && server.getNumberOfPlayerInRooms() > 1);
 		INode<IVoxyServer> effect = builder.build();
 		tree.add(effect);
 
@@ -125,6 +125,12 @@ public class VoxyCommandTree {
 		builder = tree.getNodeBuilder(ADD_OR_UPDATE, "To add or update an effect on an audio stream");
 		builder.withExecution((tree, args) -> addOrUpdateEffect(tree, args));
 		builder.withCompletions((tree, args) -> addOrUpdateEffectCompletions(tree, args));
+		effect.add(builder.build());
+
+		// Effect remove ------------------------------------------------------
+		builder = tree.getNodeBuilder(REMOVE, "To remove an effect on an audio stream");
+		builder.withExecution((tree, args) -> removeEffect(tree, args));
+		builder.withCompletions((tree, args) -> removeEffectCompletions(tree, args));
 		effect.add(builder.build());
 
 		// Remove -------------------------------------------------------------
@@ -391,8 +397,7 @@ public class VoxyCommandTree {
 			if (opt.isEmpty())
 				return NodeHelper.asList(String.format("Room \"%s\" is not registered", name));
 
-			Stream<IVoxyPlayer> players = tree.getSeed().getPlayers().stream().filter(player -> player.getRoom() == null);
-			return NodeHelper.filter(players.map(player -> player.getName()), args);
+			return NodeHelper.filter(tree.getSeed().getPlayersNotInRoom().map(player -> player.getName()), args);
 		}
 
 		return NodeHelper.asList();
@@ -418,7 +423,7 @@ public class VoxyCommandTree {
 			return NodeHelper.result(false, "The player \"%s\" is not registered in a room", args[0]);
 
 		if (!speaking.get().getRoom().getName().equals(listening.get().getRoom().getName()))
-			return NodeHelper.result(false, "\"%s\" and \"%s\" are not in the same room", args[0], args[1]);
+			return NodeHelper.result(false, "Player \"%s\" and player \"%s\" are not in the same room", args[0], args[1]);
 
 		IVoxyEffect effect = tree.getSeed().getEffectManager().get(args[2]);
 		if (effect == null)
@@ -447,19 +452,23 @@ public class VoxyCommandTree {
 		if (args.length == 0)
 			return NodeHelper.emptyList();
 
-		// Speaking player
-		if (args.length == 1) {
-			// The name of each players registered in a room
-			Stream<String> stream = tree.getSeed().getPlayers().stream().filter(player -> player.getRoom() != null).map(player -> player.getName());
-			return NodeHelper.filter(stream, args);
-		}
-
 		// Listening player
-		if (args.length == 2) {
-			// The name of each players registered in a room
-			Stream<String> stream = tree.getSeed().getPlayers().stream().filter(player -> player.getRoom() != null).map(player -> player.getName());
-			return NodeHelper.filter(stream, args);
-		}
+		if (args.length == 1)
+			return NodeHelper.filter(tree.getSeed().getPlayersInRoom().map(player -> player.getName()), args);
+
+		Optional<IVoxyPlayer> listening = tree.getSeed().getPlayerByName(args[0]);
+		if (listening.isEmpty() || listening.get().getRoom() == null)
+			return NodeHelper.emptyList();
+
+		IVoxyRoom room = listening.get().getRoom();
+
+		// Speaking player
+		if (args.length == 2)
+			return NodeHelper.filter(room.getPlayersExcept(listening.get()).map(player -> player.getName()), args);
+
+		Optional<IVoxyPlayer> speaking = tree.getSeed().getPlayerByName(args[1]);
+		if (speaking.isEmpty() || speaking.get().getRoom() == null || speaking.get().getRoom() != room)
+			return NodeHelper.emptyList();
 
 		// Effect name
 		if (args.length == 3) {
@@ -521,6 +530,65 @@ public class VoxyCommandTree {
 		}
 	}
 
+	// Effect Remove ----------------------------------------------------------
+	private IResult removeEffect(ITree<IVoxyServer> tree, String[] args) {
+		if (args.length < 3)
+			return NodeHelper.result(false, "The name of the listening player, the speaking player or the effect is missing");
+
+		Optional<IVoxyPlayer> listening = tree.getSeed().getPlayerByName(args[0]);
+		if (listening.isEmpty())
+			return NodeHelper.result(false, "Player \"%s\" is not registered on the \"%s\"server", args[0], tree.getSeed().getName());
+
+		if (listening.get().getRoom() == null)
+			return NodeHelper.result(false, "The player \"%s\" is not registered in a room", args[0]);
+
+		Optional<IVoxyPlayer> speaking = tree.getSeed().getPlayerByName(args[1]);
+		if (speaking.isEmpty())
+			return NodeHelper.result(false, "The player \"%s\" is not registered on the \"%s\" server", args[1], tree.getSeed().getName());
+
+		if (speaking.get().getRoom() == null)
+			return NodeHelper.result(false, "The player \"%s\" is not registered in a room", args[1]);
+
+		if (speaking.get().getRoom() != listening.get().getRoom())
+			return NodeHelper.result(false, "Players \"%s\" and \"%s\" are not in the same room", args[0], args[1]);
+
+		List<String> effects = listening.get().getEffects(speaking.get().getName());
+		if (!effects.contains(args[2]))
+			return NodeHelper.result(false, "Player \"%s\" is not applying effects \"%\" on the audio stream of player \"%s\"", args[1], args[0], args[2]);
+
+		tree.getSeed().removeEffect(listening.get(), speaking.get(), args[2]);
+		return NodeHelper.result(true, String.format("Effect \"%s\" has been removed between players \"%s\" and \"%s\"", args[2], args[0], args[1]));
+	}
+
+	private List<String> removeEffectCompletions(ITree<IVoxyServer> tree, String[] args) {
+		if (args.length == 0)
+			return NodeHelper.emptyList();
+
+		// Listening player
+		if (args.length == 1)
+			return NodeHelper.filter(tree.getSeed().getPlayersInRoom().map(player -> player.getName()), args);
+
+		Optional<IVoxyPlayer> listening = tree.getSeed().getPlayerByName(args[0]);
+		if (listening.isEmpty() || listening.get().getRoom() == null)
+			return NodeHelper.emptyList();
+
+		IVoxyRoom room = listening.get().getRoom();
+
+		// Speaking player
+		if (args.length == 2)
+			return NodeHelper.filter(room.getPlayersExcept(listening.get()).map(player -> player.getName()), args);
+
+		Optional<IVoxyPlayer> speaking = tree.getSeed().getPlayerByName(args[1]);
+		if (speaking.isEmpty() || speaking.get().getRoom() == null || speaking.get().getRoom() != room)
+			return NodeHelper.emptyList();
+
+		// List of effects the listening player has for the speaking player
+		if (args.length == 3)
+			return NodeHelper.filter(listening.get().getEffects(speaking.get().getName()).stream(), args);
+
+		return NodeHelper.emptyList();
+	}
+
 	// Remove Room ------------------------------------------------------------
 	private IResult removeRoom(ITree<IVoxyServer> tree, String[] args) {
 		if (args.length == 0)
@@ -568,11 +636,8 @@ public class VoxyCommandTree {
 	}
 
 	private List<String> removePlayerCompletions(ITree<IVoxyServer> tree, String[] args) {
-		if (args.length == 1) {
-			// The name of each players registered in a room
-			Stream<String> stream = tree.getSeed().getPlayers().stream().filter(player -> player.getRoom() != null).map(player -> player.getName());
-			return NodeHelper.filter(stream, args);
-		}
+		if (args.length == 1)
+			return NodeHelper.filter(tree.getSeed().getPlayersInRoom().map(player -> player.getName()), args);
 
 		return NodeHelper.emptyList();
 	}
@@ -646,11 +711,8 @@ public class VoxyCommandTree {
 	}
 
 	private List<String> setMuteCompletions(ITree<IVoxyServer> tree, String[] args) {
-		if (args.length == 1) {
-			// The name of each players registered in a room
-			Stream<String> stream = tree.getSeed().getPlayers().stream().filter(player -> player.getRoom() != null).map(player -> player.getName());
-			return NodeHelper.filter(stream, args);
-		}
+		if (args.length == 1)
+			return NodeHelper.filter(tree.getSeed().getPlayersInRoom().map(player -> player.getName()), args);
 
 		if (args.length == 2 && !args[0].isEmpty()) {
 			Optional<IVoxyPlayer> player = tree.getSeed().getPlayerByName(args[0]);
@@ -682,11 +744,8 @@ public class VoxyCommandTree {
 	}
 
 	private List<String> setPlaybackCompletions(ITree<IVoxyServer> tree, String[] args) {
-		if (args.length == 1) {
-			// The name of each players registered in a room
-			Stream<String> stream = tree.getSeed().getPlayers().stream().filter(player -> player.getRoom() != null).map(player -> player.getName());
-			return NodeHelper.filter(stream, args);
-		}
+		if (args.length == 1)
+			return NodeHelper.filter(tree.getSeed().getPlayersInRoom().map(player -> player.getName()), args);
 
 		if (args.length == 2 && !args[0].isEmpty()) {
 			Optional<IVoxyPlayer> player = tree.getSeed().getPlayerByName(args[0]);

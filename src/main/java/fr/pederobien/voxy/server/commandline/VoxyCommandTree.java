@@ -48,6 +48,7 @@ public class VoxyCommandTree {
 	private static final String ENABLE = "enable";
 	private static final String EFFECT = "effect";
 	private static final String ADD_OR_UPDATE = "add-or-update";
+	private static final String CLEAR = "clear";
 	private final ITree<IVoxyServer> tree;
 
 	/**
@@ -117,7 +118,7 @@ public class VoxyCommandTree {
 
 		// Effect -------------------------------------------------------------
 		builder = tree.getNodeBuilder(EFFECT, "To manage effects to apply on the audio stream of a player");
-		builder.withAvailability(server -> server != null && server.getNumberOfPlayerInRooms() > 1);
+		builder.withAvailability(server -> server != null && server.getNumberOfPlayerInRooms() > 0);
 		INode<IVoxyServer> effect = builder.build();
 		tree.add(effect);
 
@@ -127,10 +128,16 @@ public class VoxyCommandTree {
 		builder.withCompletions((tree, args) -> addOrUpdateEffectCompletions(tree, args));
 		effect.add(builder.build());
 
-		// Effect remove ------------------------------------------------------
+		// Effect Remove ------------------------------------------------------
 		builder = tree.getNodeBuilder(REMOVE, "To remove an effect on an audio stream");
 		builder.withExecution((tree, args) -> removeEffect(tree, args));
 		builder.withCompletions((tree, args) -> removeEffectCompletions(tree, args));
+		effect.add(builder.build());
+
+		// Effect Clear -------------------------------------------------------
+		builder = tree.getNodeBuilder(CLEAR, "To remove all effects on an audio stream");
+		builder.withExecution((tree, args) -> clearEffects(tree, args));
+		builder.withCompletions((tree, args) -> clearEffectsCompletions(tree, args));
 		effect.add(builder.build());
 
 		// Remove -------------------------------------------------------------
@@ -585,6 +592,56 @@ public class VoxyCommandTree {
 		// List of effects the listening player has for the speaking player
 		if (args.length == 3)
 			return NodeHelper.filter(listening.get().getEffects(speaking.get().getName()).stream(), args);
+
+		return NodeHelper.emptyList();
+	}
+
+	// Effect Clear -----------------------------------------------------------
+	private IResult clearEffects(ITree<IVoxyServer> tree, String[] args) {
+		if (args.length < 2)
+			return NodeHelper.result(false, "The name of the listening or the speaking player is missing");
+
+		// Listening player
+		Optional<IVoxyPlayer> listening = tree.getSeed().getPlayerByName(args[0]);
+		if (listening.isEmpty())
+			return NodeHelper.result(false, "The player \"%s\" is not registered on the \"%s\" server", args[0], tree.getSeed().getName());
+
+		IVoxyRoom room = listening.get().getRoom();
+		if (room == null)
+			return NodeHelper.result(false, "The player \"%s\" is not registered in a room", args[0]);
+
+		// Speaking player
+		Optional<IVoxyPlayer> speaking = tree.getSeed().getPlayerByName(args[1]);
+		if (speaking.isEmpty())
+			return NodeHelper.result(false, "The player \"%s\" is not registered on the \"%s\" server", args[1], tree.getSeed().getName());
+
+		if (speaking.get().getRoom() == null)
+			return NodeHelper.result(false, "The player \"%s\" is not registered in a room", args[1]);
+
+		if (speaking.get().getRoom() != room)
+			return NodeHelper.result(false, String.format("The players \"%s\" and \"%s\" are not registered in the same room", args[0], args[1]));
+
+		tree.getSeed().clearEffects(listening.get(), speaking.get());
+		return NodeHelper.result(true, String.format("All effects has been removed on \"%s\" player side for \"%s\"", args[0], args[1]));
+	}
+
+	private List<String> clearEffectsCompletions(ITree<IVoxyServer> tree, String[] args) {
+		if (args.length == 0)
+			return NodeHelper.emptyList();
+
+		// Listening player
+		if (args.length == 1)
+			return NodeHelper.filter(tree.getSeed().getPlayersInRoom().map(player -> player.getName()), args);
+
+		Optional<IVoxyPlayer> listening = tree.getSeed().getPlayerByName(args[0]);
+		if (listening.isEmpty() || listening.get().getRoom() == null)
+			return NodeHelper.emptyList();
+
+		IVoxyRoom room = listening.get().getRoom();
+
+		// Speaking player
+		if (args.length == 2)
+			return NodeHelper.filter(room.getPlayers().toList().stream().map(player -> player.getName()), args);
 
 		return NodeHelper.emptyList();
 	}
